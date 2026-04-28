@@ -25,16 +25,27 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-WINDOWS_FONTS = r"C:\Windows\Fonts"
+# Fuente empaquetada con el servidor (funciona en Linux, Windows y Mac)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BUNDLED_FONT = os.path.join(BASE_DIR, "Anton-Regular.ttf")
 
 
-def find_font(names, size):
-    for name in names:
-        for candidate in [name, os.path.join(WINDOWS_FONTS, name)]:
-            try:
-                return ImageFont.truetype(candidate, size)
-            except (IOError, OSError):
-                continue
+def load_font(size):
+    """Carga la fuente Anton empaquetada. Fallback a fuentes del sistema."""
+    candidates = [
+        BUNDLED_FONT,
+        # Linux (Railway/Render)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        # Windows (testing local)
+        r"C:\Windows\Fonts\impact.ttf",
+        r"C:\Windows\Fonts\arialbd.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except (IOError, OSError):
+            continue
     return ImageFont.load_default()
 
 
@@ -63,16 +74,10 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
 
     # Dígitos GRANDES y bien proporcionados (estilo Megasport)
     digit_size = max(int(height * 0.55), 28)
-    label_size = max(int(height * 0.17), 12)
+    label_size = max(int(height * 0.16), 12)
 
-    digit_font = find_font(
-        ["impact.ttf", "impactb.ttf", "arialbd.ttf", "Arial Bold.ttf"],
-        digit_size
-    )
-    label_font = find_font(
-        ["arialbd.ttf", "arial.ttf", "segoeui.ttf"],
-        label_size
-    )
+    digit_font = load_font(digit_size)
+    label_font = load_font(label_size)
 
     values = [days, hours, minutes, seconds]
     labels = ["DÍAS", "HORAS", "MINUTOS", "SEGUNDOS"]
