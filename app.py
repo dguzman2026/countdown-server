@@ -156,12 +156,12 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
     return img
 
 
-def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms):
+def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, n_frames=20):
+    """Genera GIF optimizado. n_frames=20 ≈ 60-80KB en lugar de 500KB."""
     now = datetime.now(tz=target_dt.tzinfo)
     diff = target_dt - now
 
     if diff.total_seconds() <= 0:
-        # Countdown expirado: mostrar ceros
         days = hours = minutes = 0
         frames_seconds = [0]
     else:
@@ -169,23 +169,33 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms):
         remaining = diff.seconds
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
-        # 60 frames animando los segundos
+        # n_frames frames animando los segundos en bucle
         current_sec = diff.seconds % 60
-        frames_seconds = list(range(current_sec, -1, -1)) + list(range(59, current_sec, -1))
-        frames_seconds = frames_seconds[:60]
+        # Generar n_frames segundos descendentes (con wrap-around)
+        seq = []
+        s = current_sec
+        for _ in range(n_frames):
+            seq.append(s)
+            s = (s - 1) % 60
+        frames_seconds = seq
 
-    frames = [draw_frame(width, height, days, hours, minutes, s, bg, fg, lbl)
-              for s in frames_seconds]
+    # Generar en modo paleta (P) — muchísimo más pequeño que RGB
+    frames = []
+    for s in frames_seconds:
+        rgb = draw_frame(width, height, days, hours, minutes, s, bg, fg, lbl)
+        frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=16))
 
+    # Calcular duración por frame para que el ciclo dure n_frames segundos
     buf = io.BytesIO()
     frames[0].save(
         buf,
         format="GIF",
         save_all=True,
         append_images=frames[1:],
-        optimize=False,
+        optimize=True,
         duration=speed_ms,
         loop=0,
+        disposal=2,
     )
     buf.seek(0)
     return buf
@@ -228,12 +238,16 @@ def countdown():
     except Exception as e:
         return Response(f"Error generando GIF: {e}", 500)
 
-    return send_file(
+    response = send_file(
         gif_buf,
         mimetype="image/gif",
         as_attachment=False,
         download_name="countdown.gif",
     )
+    # Cache HTTP de 60s — reduce drásticamente la carga del servidor
+    # cuando muchos receptores abren el email a la vez (Gmail proxy, CDNs, etc.)
+    response.headers["Cache-Control"] = "public, max-age=60"
+    return response
 
 
 @app.route("/")
