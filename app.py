@@ -18,6 +18,7 @@ Parámetros:
 
 import io
 import os
+import urllib.request
 from datetime import datetime, timezone, timedelta
 
 from flask import Flask, request, send_file, Response
@@ -25,27 +26,66 @@ from PIL import Image, ImageDraw, ImageFont
 
 app = Flask(__name__)
 
-# Fuente empaquetada con el servidor (funciona en Linux, Windows y Mac)
+# Fuente: Anton (Google Fonts, libre uso SIL OFL)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BUNDLED_FONT = os.path.join(BASE_DIR, "Anton-Regular.ttf")
+ANTON_URL = "https://fonts.gstatic.com/s/anton/v25/1Ptgg87LROyAm0K08i4gS7lu.ttf"
+
+# Estado global para diagnóstico
+FONT_PATH_USED = None
+
+
+def ensure_font():
+    """Si la fuente no existe la descarga al directorio del servidor."""
+    if os.path.exists(BUNDLED_FONT) and os.path.getsize(BUNDLED_FONT) > 10000:
+        return BUNDLED_FONT
+    try:
+        # Si existe pero está corrupta/pequeña, la borramos
+        if os.path.exists(BUNDLED_FONT):
+            os.remove(BUNDLED_FONT)
+        # Algunos servidores requieren writable temp dir si BASE_DIR es read-only
+        target = BUNDLED_FONT
+        try:
+            urllib.request.urlretrieve(ANTON_URL, target)
+        except (OSError, PermissionError):
+            target = os.path.join("/tmp", "Anton-Regular.ttf")
+            urllib.request.urlretrieve(ANTON_URL, target)
+        if os.path.getsize(target) > 10000:
+            return target
+    except Exception as e:
+        print(f"[font] No se pudo descargar Anton: {e}")
+    return None
 
 
 def load_font(size):
-    """Carga la fuente Anton empaquetada. Fallback a fuentes del sistema."""
-    candidates = [
-        BUNDLED_FONT,
-        # Linux (Railway/Render)
+    """Carga la fuente Anton (descargándola si hace falta) con fallbacks del sistema."""
+    global FONT_PATH_USED
+    candidates = []
+
+    # 1. Fuente Anton (descargada o empaquetada)
+    anton_path = ensure_font()
+    if anton_path:
+        candidates.append(anton_path)
+
+    # 2. Fallbacks del sistema
+    candidates.extend([
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        # Windows (testing local)
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
         r"C:\Windows\Fonts\impact.ttf",
         r"C:\Windows\Fonts\arialbd.ttf",
-    ]
+    ])
+
     for path in candidates:
         try:
-            return ImageFont.truetype(path, size)
+            font = ImageFont.truetype(path, size)
+            FONT_PATH_USED = path
+            return font
         except (IOError, OSError):
             continue
+
+    FONT_PATH_USED = "DEFAULT_BITMAP_FONT (problema!)"
     return ImageFont.load_default()
 
 
@@ -219,6 +259,20 @@ def index():
     <img src="/countdown.gif?end=2026-01-01T00:00:00&bg=000000&fg=FFD700&lbl=FFFFFF">
     </body></html>
     """
+
+
+@app.route("/diag")
+def diag():
+    """Diagnóstico: muestra qué fuente está usando el servidor."""
+    load_font(40)  # fuerza carga
+    info = {
+        "font_path_used": FONT_PATH_USED,
+        "bundled_font_exists": os.path.exists(BUNDLED_FONT),
+        "bundled_font_size_bytes": os.path.getsize(BUNDLED_FONT) if os.path.exists(BUNDLED_FONT) else 0,
+        "base_dir": BASE_DIR,
+        "files_in_base_dir": os.listdir(BASE_DIR),
+    }
+    return info
 
 
 if __name__ == "__main__":
