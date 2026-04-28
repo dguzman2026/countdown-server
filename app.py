@@ -44,11 +44,15 @@ def hex_to_rgb(h):
 
 
 def darken(hex_color, amount=20):
+    """Si amount es positivo oscurece, si es negativo aclara."""
     try:
-        r, g, b = hex_to_rgb(hex_color)
-        return "#{:02x}{:02x}{:02x}".format(
-            max(0, r - amount), max(0, g - amount), max(0, b - amount)
-        )
+        h = hex_color.lstrip("#")
+        r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+        if amount < 0:
+            r, g, b = min(255, r - amount), min(255, g - amount), min(255, b - amount)
+        else:
+            r, g, b = max(0, r - amount), max(0, g - amount), max(0, b - amount)
+        return f"#{r:02x}{g:02x}{b:02x}"
     except Exception:
         return hex_color
 
@@ -57,45 +61,52 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
     img = Image.new("RGB", (width, height), f"#{bg}")
     draw = ImageDraw.Draw(img)
 
-    digit_size = max(int(height * 0.44), 18)
-    label_size = max(int(height * 0.14), 9)
+    # Dígitos GRANDES y bien proporcionados (estilo Megasport)
+    digit_size = max(int(height * 0.55), 28)
+    label_size = max(int(height * 0.17), 12)
 
-    digit_font = find_font(["impact.ttf", "impactb.ttf", "arialbd.ttf"], digit_size)
-    label_font = find_font(["arial.ttf", "segoeui.ttf", "calibri.ttf"], label_size)
+    digit_font = find_font(
+        ["impact.ttf", "impactb.ttf", "arialbd.ttf", "Arial Bold.ttf"],
+        digit_size
+    )
+    label_font = find_font(
+        ["arialbd.ttf", "arial.ttf", "segoeui.ttf"],
+        label_size
+    )
 
     values = [days, hours, minutes, seconds]
     labels = ["DÍAS", "HORAS", "MINUTOS", "SEGUNDOS"]
     block_w = width // 4
 
+    # Línea vertical de los separadores
+    sep_color = darken(f"#{bg}", -40) if bg.lower() in ("000000", "111111") else "#444444"
+
     for i, (val, label_text) in enumerate(zip(values, labels)):
         x_center = i * block_w + block_w // 2
-        pad = int(block_w * 0.06)
-        y1 = int(height * 0.06)
-        y2 = int(height * 0.76)
 
-        draw.rectangle(
-            [i * block_w + pad, y1, (i + 1) * block_w - pad, y2],
-            fill=darken(f"#{bg}", 20)
-        )
-
+        # Número (centrado vertical en la mitad superior)
         num_str = f"{val:02d}"
         bbox = draw.textbbox((0, 0), num_str, font=digit_font)
         nw = bbox[2] - bbox[0]
         nh = bbox[3] - bbox[1]
         nx = x_center - nw // 2
-        ny = y1 + (y2 - y1 - nh) // 2 - bbox[1]
+        ny = int(height * 0.18) - bbox[1]
         draw.text((nx, ny), num_str, fill=f"#{fg}", font=digit_font)
 
+        # Etiqueta (debajo, centrada)
         bbox_l = draw.textbbox((0, 0), label_text, font=label_font)
         lw = bbox_l[2] - bbox_l[0]
         lx = x_center - lw // 2
-        ly = int(height * 0.80)
+        ly = int(height * 0.74)
         draw.text((lx, ly), label_text, fill=f"#{lbl}", font=label_font)
 
+        # Separador vertical fino entre bloques
         if i < 3:
             sx = (i + 1) * block_w
-            draw.line([(sx, int(height * 0.12)), (sx, int(height * 0.74))],
-                      fill="#444444", width=1)
+            draw.line(
+                [(sx, int(height * 0.20)), (sx, int(height * 0.80))],
+                fill=sep_color, width=1
+            )
 
     return img
 
