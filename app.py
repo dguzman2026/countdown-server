@@ -163,36 +163,50 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl, lang="
     return img
 
 
-def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_frames=20):
-    """Genera GIF optimizado. n_frames=20 ≈ 60-80KB en lugar de 500KB."""
+def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_frames=60):
+    """Genera GIF con cuenta atrás real: cada frame decrementa 1 segundo
+    propagando el cambio a minutos, horas y días."""
     now = datetime.now(tz=target_dt.tzinfo)
     diff = target_dt - now
 
     if diff.total_seconds() <= 0:
-        days = hours = minutes = 0
-        frames_seconds = [0]
+        frames_data = [(0, 0, 0, 0)] * n_frames
     else:
+        total_seconds = int(diff.total_seconds())
         days = diff.days
-        remaining = diff.seconds
-        hours = remaining // 3600
-        minutes = (remaining % 3600) // 60
-        # n_frames frames animando los segundos en bucle
-        current_sec = diff.seconds % 60
-        # Generar n_frames segundos descendentes (con wrap-around)
-        seq = []
-        s = current_sec
-        for _ in range(n_frames):
-            seq.append(s)
-            s = (s - 1) % 60
-        frames_seconds = seq
+        rem  = diff.seconds
+        h    = rem // 3600
+        m    = (rem % 3600) // 60
+        s    = rem % 60
+        d    = days
 
-    # Generar en modo paleta (P) — muchísimo más pequeño que RGB
+        frames_data = []
+        for _ in range(n_frames):
+            frames_data.append((d, h, m, s))
+            # Decrementa 1 segundo y propaga
+            s -= 1
+            if s < 0:
+                s = 59
+                m -= 1
+                if m < 0:
+                    m = 59
+                    h -= 1
+                    if h < 0:
+                        h = 23
+                        d -= 1
+                        if d < 0:
+                            # Llegamos al fin: rellena el resto con 00:00:00:00
+                            frames_data.extend(
+                                [(0, 0, 0, 0)] * (n_frames - len(frames_data))
+                            )
+                            break
+
+    # Render — modo paleta para reducir tamaño
     frames = []
-    for s in frames_seconds:
-        rgb = draw_frame(width, height, days, hours, minutes, s, bg, fg, lbl, lang)
+    for (d, h, m, s) in frames_data:
+        rgb = draw_frame(width, height, d, h, m, s, bg, fg, lbl, lang)
         frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=16))
 
-    # Calcular duración por frame para que el ciclo dure n_frames segundos
     buf = io.BytesIO()
     frames[0].save(
         buf,
@@ -254,9 +268,9 @@ def countdown():
         as_attachment=False,
         download_name="countdown.gif",
     )
-    # Cache HTTP de 60s — reduce drásticamente la carga del servidor
-    # cuando muchos receptores abren el email a la vez (Gmail proxy, CDNs, etc.)
-    response.headers["Cache-Control"] = "public, max-age=60"
+    # Cache HTTP de 30s — equilibrio entre carga del servidor
+    # y precisión del countdown cuando se reabre el email
+    response.headers["Cache-Control"] = "public, max-age=30"
     return response
 
 
