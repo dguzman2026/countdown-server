@@ -108,7 +108,14 @@ def darken(hex_color, amount=20):
         return hex_color
 
 
-def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
+LABELS = {
+    "es": ("DÍAS",  "HORAS",   "MINUTOS", "SEGUNDOS"),
+    "fr": ("JOURS", "HEURES",  "MINUTES", "SECONDES"),
+    "pt": ("DIAS",  "HORAS",   "MINUTOS", "SEGUNDOS"),
+}
+
+
+def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl, lang="es"):
     img = Image.new("RGB", (width, height), f"#{bg}")
     draw = ImageDraw.Draw(img)
 
@@ -120,7 +127,7 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
     label_font = load_font(label_size)
 
     values = [days, hours, minutes, seconds]
-    labels = ["DÍAS", "HORAS", "MINUTOS", "SEGUNDOS"]
+    labels = LABELS.get(lang, LABELS["es"])
     block_w = width // 4
 
     # Línea vertical de los separadores
@@ -156,7 +163,7 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl):
     return img
 
 
-def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, n_frames=20):
+def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_frames=20):
     """Genera GIF optimizado. n_frames=20 ≈ 60-80KB en lugar de 500KB."""
     now = datetime.now(tz=target_dt.tzinfo)
     diff = target_dt - now
@@ -182,7 +189,7 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, n_frames=20):
     # Generar en modo paleta (P) — muchísimo más pequeño que RGB
     frames = []
     for s in frames_seconds:
-        rgb = draw_frame(width, height, days, hours, minutes, s, bg, fg, lbl)
+        rgb = draw_frame(width, height, days, hours, minutes, s, bg, fg, lbl, lang)
         frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=16))
 
     # Calcular duración por frame para que el ciclo dure n_frames segundos
@@ -226,15 +233,18 @@ def countdown():
     except Exception as e:
         return Response(f"Error en fecha: {e}", 400)
 
-    bg  = request.args.get("bg",  "000000").lstrip("#")
-    fg  = request.args.get("fg",  "FFD700").lstrip("#")
-    lbl = request.args.get("lbl", "FFFFFF").lstrip("#")
-    w   = min(max(int(request.args.get("w", 480)), 200), 800)
-    h   = min(max(int(request.args.get("h", 140)), 80),  300)
-    spd = min(max(int(request.args.get("spd", 1000)), 200), 3000)
+    bg   = request.args.get("bg",  "000000").lstrip("#")
+    fg   = request.args.get("fg",  "FFD700").lstrip("#")
+    lbl  = request.args.get("lbl", "FFFFFF").lstrip("#")
+    w    = min(max(int(request.args.get("w", 480)), 200), 800)
+    h    = min(max(int(request.args.get("h", 140)), 80),  300)
+    spd  = min(max(int(request.args.get("spd", 1000)), 200), 3000)
+    lang = request.args.get("lang", "es").lower()
+    if lang not in LABELS:
+        lang = "es"
 
     try:
-        gif_buf = generate_gif(target_dt, bg, fg, lbl, w, h, spd)
+        gif_buf = generate_gif(target_dt, bg, fg, lbl, w, h, spd, lang)
     except Exception as e:
         return Response(f"Error generando GIF: {e}", 500)
 
