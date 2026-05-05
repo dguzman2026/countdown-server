@@ -208,6 +208,9 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_f
         frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=16))
 
     buf = io.BytesIO()
+    # loop omitted → el GIF se reproduce UNA SOLA VEZ y se queda en el último frame.
+    # Así no hay "salto hacia atrás" cada minuto. Si el usuario recarga
+    # el email, recibe un GIF nuevo (porque desactivamos la cache HTTP).
     frames[0].save(
         buf,
         format="GIF",
@@ -215,7 +218,6 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_f
         append_images=frames[1:],
         optimize=True,
         duration=speed_ms,
-        loop=0,
         disposal=2,
     )
     buf.seek(0)
@@ -268,9 +270,13 @@ def countdown():
         as_attachment=False,
         download_name="countdown.gif",
     )
-    # Cache HTTP de 30s — equilibrio entre carga del servidor
-    # y precisión del countdown cuando se reabre el email
-    response.headers["Cache-Control"] = "public, max-age=30"
+    # SIN cache: cada petición devuelve un GIF recalculado al instante.
+    # Esto maximiza la precisión (cada vez que alguien abre o recarga el
+    # email ve el tiempo real). El precio es más carga en el servidor,
+    # pero el GIF es ligero y Railway lo soporta bien.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 
