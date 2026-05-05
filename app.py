@@ -164,15 +164,16 @@ def draw_frame(width, height, days, hours, minutes, seconds, bg, fg, lbl, lang="
 
 
 def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_frames=60):
-    """Genera GIF con cuenta atrás real: cada frame decrementa 1 segundo
-    propagando el cambio a minutos, horas y días."""
+    """Genera GIF de countdown decrementando 1s por frame.
+    Optimización: solo se codifican los píxeles que cambian entre frames
+    (técnica usada por countdownmail.com y similares para reducir 10x el tamaño).
+    """
     now = datetime.now(tz=target_dt.tzinfo)
     diff = target_dt - now
 
     if diff.total_seconds() <= 0:
         frames_data = [(0, 0, 0, 0)] * n_frames
     else:
-        total_seconds = int(diff.total_seconds())
         days = diff.days
         rem  = diff.seconds
         h    = rem // 3600
@@ -183,7 +184,6 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_f
         frames_data = []
         for _ in range(n_frames):
             frames_data.append((d, h, m, s))
-            # Decrementa 1 segundo y propaga
             s -= 1
             if s < 0:
                 s = 59
@@ -195,30 +195,34 @@ def generate_gif(target_dt, bg, fg, lbl, width, height, speed_ms, lang="es", n_f
                         h = 23
                         d -= 1
                         if d < 0:
-                            # Llegamos al fin: rellena el resto con 00:00:00:00
                             frames_data.extend(
                                 [(0, 0, 0, 0)] * (n_frames - len(frames_data))
                             )
                             break
 
-    # Render — modo paleta para reducir tamaño
-    frames = []
-    for (d, h, m, s) in frames_data:
-        rgb = draw_frame(width, height, d, h, m, s, bg, fg, lbl, lang)
-        frames.append(rgb.convert("P", palette=Image.Palette.ADAPTIVE, colors=16))
+    # Renderizar todos los frames en RGB
+    rgb_frames = [
+        draw_frame(width, height, d, h, m, s, bg, fg, lbl, lang)
+        for (d, h, m, s) in frames_data
+    ]
+
+    # Cuantizar el primer frame para fijar la paleta
+    base = rgb_frames[0].quantize(colors=8, method=Image.Quantize.MEDIANCUT)
+    palette_frames = [base]
+    # Reusar la misma paleta para los siguientes frames (fundamental para optimize)
+    for f in rgb_frames[1:]:
+        palette_frames.append(f.quantize(colors=8, palette=base))
 
     buf = io.BytesIO()
-    # loop omitted → el GIF se reproduce UNA SOLA VEZ y se queda en el último frame.
-    # Así no hay "salto hacia atrás" cada minuto. Si el usuario recarga
-    # el email, recibe un GIF nuevo (porque desactivamos la cache HTTP).
-    frames[0].save(
+    palette_frames[0].save(
         buf,
         format="GIF",
         save_all=True,
-        append_images=frames[1:],
+        append_images=palette_frames[1:],
         optimize=True,
         duration=speed_ms,
-        disposal=2,
+        loop=0,
+        disposal=1,  # cada frame se superpone al anterior → diff codifica solo los píxeles que cambian
     )
     buf.seek(0)
     return buf
